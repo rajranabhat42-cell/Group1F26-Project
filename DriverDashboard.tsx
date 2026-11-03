@@ -28,8 +28,12 @@ function DriverDashboard() {
             {/* Trip History section starts here */}
             <View style={styles.section} testID="trip-history-section">
                 <Text style={styles.sectionTitle}>Trip History</Text>
-                {/* Empty for now, Step 2 adds the "No trips recorded" message */}
-                <View style={styles.sectionBody} />
+                {/* Sprint 1 empty state, there is no trip data source yet */}
+                <View style={styles.sectionBody}>
+                    <Text style={styles.emptyText} testID="trip-history-empty">
+                        No trips recorded
+                    </Text>
+                </View>
             </View>
         </ScrollView>
     );
@@ -76,6 +80,13 @@ const styles = StyleSheet.create({
     // Gives the empty section some height so the card doesn't collapse
     sectionBody: {
         minHeight: 80,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    // Muted text for the "No trips recorded" message
+    emptyText: {
+        fontSize: 15,
+        color: '#7A6555',
     },
 });
 
