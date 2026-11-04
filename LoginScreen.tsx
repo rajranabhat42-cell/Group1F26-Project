@@ -4,14 +4,13 @@
  * Project: Mobile Driver Analytics System
  * Description: Driver login interface with input validation.
  * User Story: US02 / AB#16
- * Task: AB#21 - Build login screen UI
+ * Task: AB#21, AB#22
  *
  * @format
  */
 
 import React, { useState } from 'react';
 import {
-  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -19,36 +18,59 @@ import {
   View,
 } from 'react-native';
 
+import { supabase } from './src/supabase';
+
 function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // Validate the inputs before attempting login
-  const handleLogin = () => {
-    const trimmedEmail = email.trim();
+  
+const handleLogin = async () => {
+  const trimmedEmail = email.trim();
 
-    if (!trimmedEmail || !password) {
-      setError('Please enter your email and password.');
+  // Check for empty fields
+  if (!trimmedEmail || !password) {
+    setError('Please enter your email and password.');
+    return;
+  }
+
+  // Validate email format
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!emailPattern.test(trimmedEmail)) {
+    setError('Please enter a valid email address.');
+    return;
+  }
+
+  setError('');
+  setLoading(true);
+
+  try {
+    // Authenticate using Supabase
+    const { error: authError } =
+      await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password: password,
+      });
+
+    if (authError) {
+      setError(authError.message);
       return;
     }
 
-    // Basic email format validation
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Successful login will be handled by App.tsx
+    // when it detects the authenticated session.
 
-    if (!emailPattern.test(trimmedEmail)) {
-      setError('Please enter a valid email address.');
-      return;
-    }
+  } catch {
+    setError('Unable to log in. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
 
-    setError('');
-
-    // Authentication will be implemented in AB#22
-    Alert.alert(
-      'Login',
-      'Login form validated. Authentication is not connected yet.',
-    );
-  };
 
   return (
     <View style={styles.container} testID="login-screen">
@@ -97,10 +119,13 @@ function LoginScreen() {
       <Pressable
         style={styles.loginButton}
         onPress={handleLogin}
+        disabled={loading}
         accessibilityRole="button"
         testID="login-button"
       >
-        <Text style={styles.loginButtonText}>Log In</Text>
+        <Text style={styles.loginButtonText}>
+          {loading ? 'Logging in...' : 'Log In'}
+        </Text>
       </Pressable>
     </View>
   );

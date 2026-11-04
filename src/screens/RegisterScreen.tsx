@@ -51,24 +51,6 @@ function RegisterScreen() {
                 return;
             }
 
-            // Save the user's details in the profiles table
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .insert([
-                    {
-                        id: authData.user.id,
-                        email: email.trim(),
-                        full_name: fullName.trim(),
-                        role: 'Driver'
-                    }
-                ]);
-
-            // Show an error if saving the profile fails
-            if (profileError) {
-                Alert.alert('Profile Error', profileError.message);
-                return;
-            }
-
             // Show a success message
             Alert.alert('Success', 'Account created! You can now log in.');
 
