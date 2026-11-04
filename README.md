@@ -1,97 +1,200 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Mobile Driver Analytics System
 
-# Getting Started
+## Project Overview
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+The Mobile Driver Analytics System is a mobile application project for monitoring driving behaviour using a smartphone. The main idea is to use a phone instead of a separate device installed in a vehicle.
 
-## Step 1: Start Metro
+The application is planned to collect driving information such as speed, location, and acceleration while a driver is on a trip. After a trip, the system will use this information to provide a driving score and show the driver details about their driving behaviour.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+Drivers will also be able to choose whether they want to share their driving information with an insurance company. Insurance administrators will only be able to view information from drivers who have given permission.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+This README describes the current project plan and analysis. **Development has not started yet**, so the features and technical design below are planned and have not been implemented or tested.
 
-```sh
-# Using npm
-npm start
+## Course and Team Information
 
-# OR using Yarn
-yarn start
-```
+- **Course:** SENG71000 - Systems Analysis and Design
+- **Project:** Mobile Driver Analytics System
+- **Phase:** Phase 2 - Analysis
+- **Section:** 1
+- **Group:** 1
+- **Professor:** Akrem El-Ghazal
 
-## Step 2: Build and run your app
+### Group Members
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+- Jacob Stekelenburg
+- Fabio Bustamante Romillo
+- Kadeema Wakha
+- Raj Bahadur Bhat
 
-### Android
+## Main Goals
 
-```sh
-# Using npm
-npm run android
+The project is intended to:
 
-# OR using Yarn
-yarn android
-```
+- Record trip information using a smartphone.
+- Track information such as speed, location, and acceleration.
+- Calculate a driving score out of 100.
+- Show drivers their trip history and driving statistics.
+- Let drivers review the details behind their driving score.
+- Allow drivers to control whether their information is shared with an insurance company.
+- Give insurance administrators access only to information shared with their permission.
 
-### iOS
+## Planned User Roles
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+### Driver
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+A driver will be able to create an account, log in, record trips, view trip history, check driving scores, compare trips, and manage data-sharing consent.
 
-```sh
-bundle install
-```
+### Insurance Administrator
 
-Then, and every time you update your native dependencies, run:
+An insurance administrator will be able to view information from customers who have agreed to share their driving data. They will not have access to every driver's information by default.
 
-```sh
-bundle exec pod install
-```
+### External Services
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+The system is also expected to use external services for mapping and road speed-limit information. The services have not been selected yet.
 
-```sh
-# Using npm
-npm run ios
+## Planned Features
 
-# OR using Yarn
-yarn ios
-```
+The Phase 2 analysis identified the following main use cases:
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+1. Register an account.
+2. Log in.
+3. Record a trip.
+4. View trip history.
+5. View trip details and route.
+6. View driving score breakdown.
+7. Compare trips.
+8. Manage sharing consent.
+9. View customers who have given consent.
+10. Review customer driving information.
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+These are planned features. They are not available in a working application yet.
 
-## Step 3: Modify your app
+## Requirements
 
-Now that you have successfully run the app, let's make changes!
+The Phase 2 report includes functional requirements FR01-FR12 and non-functional requirements NFR01-NFR08. These requirements describe what the system should do and the quality expectations for the system.
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+The requirements will need to be reviewed and updated as the project moves forward.
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+## Planned Technology
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+The current technology choices identified in Phase 2 are:
 
-## Congratulations! :tada:
+| Area | Planned Technology |
+|---|---|
+| Mobile application | React Native |
+| Mobile application language | TypeScript |
+| Backend | Node.js with Express |
+| Backend language | JavaScript |
+| Database | PostgreSQL through Supabase |
+| Authentication | Supabase Auth |
 
-You've successfully run and modified your React Native App. :partying_face:
+The mapping service and road speed-limit data source have not been selected yet.
 
-### Now what?
+## Planned System Design
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+The analysis includes a proposed domain model with classes such as:
 
-# Troubleshooting
+- User
+- Driver
+- InsuranceAdministrator
+- InsuranceCompany
+- SharingConsent
+- Trip
+- TripSample
+- DrivingEvent
+- DrivingScore
+- ScoreComponent
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+The proposed database structure includes:
 
-# Learn More
+- `profiles`
+- `insurance_companies`
+- `sharing_consents`
+- `trips`
+- `trip_samples`
+- `driving_events`
+- `driving_scores`
+- `score_components`
 
-To learn more about React Native, take a look at the following resources:
+Supabase Auth is planned to handle user authentication. User passwords will not be stored directly in the application database.
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+These models and tables are part of the current design and may change during development.
+
+## Planned Application Screens
+
+The application is expected to include the following screens:
+
+- Registration and Login
+- Driver Dashboard
+- Active Trip
+- Trip History
+- Trip Details and Driving Score
+- Compare Driving Statistics
+- Sharing Settings
+- Consenting Customers
+- Customer Driving Information
+
+The screens and wireframes are still part of the design work. They have not been implemented.
+
+## Development Plan
+
+The team is following a sprint-based approach. The first sprint is planned around the basic account and dashboard functionality.
+
+### Sprint 1
+
+**Planned dates:** November 2-6, 2026
+
+**Sprint goal:** Set up registration, login, logout, and a protected dashboard connected to Supabase.
+
+The proposed Sprint 1 user stories are:
+
+- US01 - Register an account.
+- US02 - Log in and log out.
+- US03 - Access a protected dashboard.
+
+The Phase 2 report lists these as proposed sprint tasks. The work has not started yet, and task owners and Azure Board IDs still need to be confirmed.
+
+### Future Work
+
+Later sprints are expected to cover the other planned features, including trip recording, trip history, driving scores, trip comparisons, and consent-based insurance access. The backlog and sprint plans may be updated as the team makes progress.
+
+## Current Project Status
+
+At this stage, the project is in the analysis and planning phase.
+
+Completed or prepared so far:
+
+- Phase 1 project vision.
+- Phase 2 requirements analysis.
+- Identification of system actors and use cases.
+- Proposed domain model and database structure.
+- Initial technology choices.
+- Initial sprint planning.
+
+Not started yet:
+
+- Application development.
+- Backend implementation.
+- Database setup.
+- Supabase authentication setup.
+- UI implementation.
+- Trip tracking and driving score functionality.
+- Testing and working demonstrations.
+
+No application features should be considered completed until they have been developed and tested.
+
+## Next Steps
+
+The team's next steps include:
+
+1. Finalize the diagrams and remaining analysis documents.
+2. Confirm task owners and Azure Board IDs.
+3. Set up the project repository and development environment.
+4. Start Sprint 1 development.
+5. Connect the application to Supabase.
+6. Test the features as they are developed.
+7. Update this README as the project progresses.
+
+## Note
+
+This README will be updated as the project moves from analysis and planning into development. The technologies, requirements, design, and sprint plans may change based on the team's decisions and progress.
