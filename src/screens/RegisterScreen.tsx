@@ -32,6 +32,11 @@ function RegisterScreen() {
             const { data: authData, error: authError } = await supabase.auth.signUp({
                 email: email.trim(),
                 password: password,
+                options: {
+                    data: {
+                        full_name: fullName.trim(),
+                    },
+                },
             });
 
             // Show an error if registration fails
