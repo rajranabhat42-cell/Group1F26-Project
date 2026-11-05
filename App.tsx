@@ -2,7 +2,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -16,6 +15,7 @@ import { supabase } from './src/supabase';
 import RegisterScreen from './src/screens/RegisterScreen';
 import LoginScreen from './LoginScreen';
 import DriverDashboard from './DriverDashboard';
+import LogoutButton from './src/components/LogoutButton';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -33,26 +33,19 @@ function App() {
 
     // React whenever the user logs in or out.
     const { data: { subscription } } =
-      supabase.auth.onAuthStateChange((_event, newSession) => {
+      supabase.auth.onAuthStateChange((event, newSession) => {
         setSession(newSession);
         setReady(true);
+
+        if (event === 'SIGNED_OUT') {
+          setShowRegister(false);
+        }
       });
 
     return () => {
       subscription.unsubscribe();
     };
   }, []);
-
-  const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      Alert.alert('Logout Failed', error.message);
-      return;
-    }
-
-    setShowRegister(false);
-  };
 
   return (
     <SafeAreaProvider>
@@ -65,14 +58,7 @@ function App() {
           <>
             <DriverDashboard />
 
-            <Pressable
-              style={styles.button}
-              onPress={handleLogout}
-              accessibilityRole="button"
-              testID="logout-button"
-            >
-              <Text style={styles.buttonText}>Log Out</Text>
-            </Pressable>
+            <LogoutButton supabase={supabase} />
           </>
         ) : (
           <>
@@ -100,18 +86,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F0E8',
-  },
-  button: {
-    backgroundColor: '#3E2C23',
-    padding: 16,
-    margin: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
   switchButton: {
     padding: 20,
