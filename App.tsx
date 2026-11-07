@@ -62,8 +62,13 @@ function App() {
           </>
         ) : (
           <>
-            {showRegister ? <RegisterScreen /> : <LoginScreen />}
-
+            {showRegister ? (
+              <RegisterScreen
+                onRegistered={() => setShowRegister(false)}
+              />
+            ) : (
+              <LoginScreen />
+            )}
             <Pressable
               style={styles.switchButton}
               onPress={() => setShowRegister(!showRegister)}
