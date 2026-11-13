@@ -73,3 +73,83 @@ describe('TripRecordingManager', () => {
     );
   });
 });
+
+describe('TripRecordingManager GPS Samples', () => {
+  const sample = {
+    timestamp: 1000,
+    latitude: 43.4516,
+    longitude: -80.4925,
+    speedMetersPerSecond: 12.5,
+    accuracyMeters: 5,
+  };
+
+  test('records GPS samples during an active trip', () => {
+    const manager = new TripRecordingManager();
+
+    manager.startTrip();
+    manager.recordSample(sample);
+
+    expect(manager.getSamples()).toEqual([sample]);
+  });
+
+  test('rejects GPS samples when no trip is active', () => {
+    const manager = new TripRecordingManager();
+
+    expect(() => manager.recordSample(sample)).toThrow(
+      'Cannot record GPS data without an active trip.',
+    );
+
+    manager.startTrip();
+    manager.stopTrip();
+
+    expect(() => manager.recordSample(sample)).toThrow(
+      'Cannot record GPS data without an active trip.',
+    );
+  });
+
+  test('preserves the order of recorded samples', () => {
+    const manager = new TripRecordingManager();
+
+    const secondSample = {
+      ...sample,
+      timestamp: 2000,
+      latitude: 43.452,
+    };
+
+    manager.startTrip();
+    manager.recordSample(sample);
+    manager.recordSample(secondSample);
+
+    expect(manager.getSamples()).toEqual([
+      sample,
+      secondSample,
+    ]);
+  });
+
+  test('protects stored samples from external changes', () => {
+    const manager = new TripRecordingManager();
+
+    manager.startTrip();
+    manager.recordSample(sample);
+
+    const samples = manager.getSamples();
+    samples[0].latitude = 0;
+    samples.push({ ...sample });
+
+    expect(manager.getSamples()).toEqual([sample]);
+  });
+
+  test('does not erase samples when starting a duplicate trip', () => {
+    const manager = new TripRecordingManager();
+
+    manager.startTrip();
+    manager.recordSample(sample);
+
+    expect(() => manager.startTrip()).toThrow(
+      'A trip is already active or awaiting processing.',
+    );
+
+    expect(manager.getSamples()).toEqual([sample]);
+    expect(manager.getStatus()).toBe('recording');
+  });
+});
