@@ -13,8 +13,8 @@ import type { Session } from '@supabase/supabase-js';
 
 import { supabase } from './src/supabase';
 import RegisterScreen from './src/screens/RegisterScreen';
-import LoginScreen from './LoginScreen';
-import DriverDashboard from './DriverDashboard';
+import LoginScreen from './src/screens/LoginScreen';
+import DriverDashboard from './src/screens/DriverDashboard';
 import LogoutButton from './src/components/LogoutButton';
 
 function App() {

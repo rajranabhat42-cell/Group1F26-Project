@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 
-import { supabase } from './src/supabase';
+import { supabase } from '../supabase';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
