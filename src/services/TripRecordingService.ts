@@ -35,6 +35,7 @@ export class TripRecordingService {
       }
       
       const pendingSamples: LocationSample[] = [];
+      let permissionLostDuringStartup = false;
 
       // Preserve location updates received during watcher initialization.
       this.tracker.start(
@@ -53,6 +54,10 @@ export class TripRecordingService {
             return;
           }
 
+          if (error.code === 1 && status === 'idle' && this.starting) {
+            permissionLostDuringStartup = true;
+          }
+
           // Stop recording when location permission is lost.
           if (error.code === 1 && status === 'recording') {
             this.stopTrip();
@@ -62,6 +67,11 @@ export class TripRecordingService {
           onError(error);
         },
       );
+
+      if (permissionLostDuringStartup) {
+        this.tracker.stop();
+        throw new Error('Location permission lost during trip startup.');
+      }
 
       try {
         this.manager.startTrip();

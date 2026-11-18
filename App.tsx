@@ -6,9 +6,11 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  View,
 } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from 'react-native-safe-area-context';
 import type { Session } from '@supabase/supabase-js';
 
 import { supabase } from './src/supabase';
@@ -23,7 +25,7 @@ function App() {
   const [showRegister, setShowRegister] = useState(false);
 
   useEffect(() => {
-    // Check whether the user is already logged in.
+    // Restore the existing authentication session.
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setReady(true);
@@ -31,7 +33,7 @@ function App() {
       setReady(true);
     });
 
-    // React whenever the user logs in or out.
+    // Update the interface when authentication state changes.
     const { data: { subscription } } =
       supabase.auth.onAuthStateChange((event, newSession) => {
         setSession(newSession);
@@ -51,13 +53,15 @@ function App() {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
 
-      <View style={styles.container}>
+      <SafeAreaView
+        style={styles.container}
+        edges={['top']}
+      >
         {!ready ? (
           <ActivityIndicator size="large" />
         ) : session ? (
           <>
             <DriverDashboard />
-
             <LogoutButton supabase={supabase} />
           </>
         ) : (
@@ -69,6 +73,7 @@ function App() {
             ) : (
               <LoginScreen />
             )}
+
             <Pressable
               style={styles.switchButton}
               onPress={() => setShowRegister(!showRegister)}
@@ -82,7 +87,7 @@ function App() {
             </Pressable>
           </>
         )}
-      </View>
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }

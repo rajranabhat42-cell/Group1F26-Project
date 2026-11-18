@@ -168,4 +168,91 @@ describe('TripRecordingService', () => {
       },
     ]);
   });
+
+  test('stops recording when location permission is lost', async () => {
+    await service.startTrip(onError);
+
+    const errorCallback = watchPosition.mock.calls[0][1];
+
+    errorCallback({
+      code: 1,
+      message: 'Location permission denied',
+    });
+
+    expect(service.getStatus()).toBe('stopped');
+    expect(clearWatch).toHaveBeenCalledWith(7);
+    expect(onError).toHaveBeenCalledWith({
+      code: 1,
+      message: 'Location permission denied',
+    });
+  });
+
+  test('continues recording when location is unavailable', async () => {
+    await service.startTrip(onError);
+
+    const errorCallback = watchPosition.mock.calls[0][1];
+
+    errorCallback({
+      code: 2,
+      message: 'Location unavailable',
+    });
+
+    expect(service.getStatus()).toBe('recording');
+    expect(clearWatch).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  test('continues recording after a GPS timeout', async () => {
+    await service.startTrip(onError);
+
+    const errorCallback = watchPosition.mock.calls[0][1];
+
+    errorCallback({
+      code: 3,
+      message: 'Location request timed out',
+    });
+
+    expect(service.getStatus()).toBe('recording');
+    expect(clearWatch).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  test('ignores GPS errors after recording has stopped', async () => {
+    await service.startTrip(onError);
+
+    const errorCallback = watchPosition.mock.calls[0][1];
+
+    service.stopTrip();
+
+    errorCallback({
+      code: 2,
+      message: 'Location unavailable',
+    });
+
+    expect(service.getStatus()).toBe('stopped');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+
+  test('prevents recording when location permission is lost during startup', async () => {
+    watchPosition.mockImplementationOnce((_onPosition, onGpsError) => {
+      onGpsError({
+        code: 1,
+        message: 'Location permission denied',
+      });
+
+      return 7;
+    });
+
+    await expect(service.startTrip(onError)).rejects.toThrow(
+      'Location permission lost during trip startup.',
+    );
+
+    expect(service.getStatus()).toBe('idle');
+    expect(clearWatch).toHaveBeenCalledWith(7);
+    expect(onError).toHaveBeenCalledWith({
+      code: 1,
+      message: 'Location permission denied',
+    });
+  });
 });
