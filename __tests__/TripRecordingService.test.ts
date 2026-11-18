@@ -77,6 +77,7 @@ describe('TripRecordingService', () => {
         longitude: -80.4925,
         speedMetersPerSecond: 12.5,
         accuracyMeters: 5,
+        accelerationMetersPerSecondSquared: null,
       },
     ]);
   });
@@ -165,6 +166,7 @@ describe('TripRecordingService', () => {
         longitude: -80.4925,
         speedMetersPerSecond: 12.5,
         accuracyMeters: 5,
+        accelerationMetersPerSecondSquared: null,
       },
     ]);
   });
@@ -255,4 +257,28 @@ describe('TripRecordingService', () => {
       message: 'Location permission denied',
     });
   });
+
+  test('calculates acceleration from incoming GPS updates', async () => {
+    await service.startTrip(onError);
+
+    const locationCallback = watchPosition.mock.calls[0][0];
+
+    locationCallback(sample);
+
+    locationCallback({
+      ...sample,
+      timestamp: 3000,
+      coords: {
+        ...sample.coords,
+        speed: 16.5,
+      },
+    });
+
+    const samples = service.getSamples();
+
+    expect(samples).toHaveLength(2);
+    expect(samples[0].accelerationMetersPerSecondSquared).toBeNull();
+    expect(samples[1].accelerationMetersPerSecondSquared).toBe(2);
+  });
+
 });

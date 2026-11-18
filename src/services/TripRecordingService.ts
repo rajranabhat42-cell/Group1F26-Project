@@ -7,6 +7,7 @@ import {
 } from './TripLocationTracker';
 import {
   TripRecordingManager,
+  type DrivingSample,
   type RecordingStatus,
   type TripSession,
 } from './TripRecordingManager';
@@ -107,7 +108,7 @@ export class TripRecordingService {
     return this.manager.getSession();
   }
 
-  getSamples(): LocationSample[] {
+  getSamples(): DrivingSample[] {
     return this.manager.getSamples();
   }
 

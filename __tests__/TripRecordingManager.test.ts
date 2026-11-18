@@ -83,13 +83,18 @@ describe('TripRecordingManager GPS Samples', () => {
     accuracyMeters: 5,
   };
 
+  const expectedSample = {
+    ...sample,
+    accelerationMetersPerSecondSquared: null,
+  };
+
   test('records GPS samples during an active trip', () => {
     const manager = new TripRecordingManager();
 
     manager.startTrip();
     manager.recordSample(sample);
 
-    expect(manager.getSamples()).toEqual([sample]);
+    expect(manager.getSamples()).toEqual([expectedSample]);
   });
 
   test('rejects GPS samples when no trip is active', () => {
@@ -121,8 +126,11 @@ describe('TripRecordingManager GPS Samples', () => {
     manager.recordSample(secondSample);
 
     expect(manager.getSamples()).toEqual([
-      sample,
-      secondSample,
+      expectedSample,
+      {
+        ...secondSample,
+        accelerationMetersPerSecondSquared: 0,
+      },
     ]);
   });
 
@@ -134,9 +142,9 @@ describe('TripRecordingManager GPS Samples', () => {
 
     const samples = manager.getSamples();
     samples[0].latitude = 0;
-    samples.push({ ...sample });
+    samples.push({ ...expectedSample });
 
-    expect(manager.getSamples()).toEqual([sample]);
+    expect(manager.getSamples()).toEqual([expectedSample]);
   });
 
   test('does not erase samples when starting a duplicate trip', () => {
@@ -149,7 +157,91 @@ describe('TripRecordingManager GPS Samples', () => {
       'A trip is already active or awaiting processing.',
     );
 
-    expect(manager.getSamples()).toEqual([sample]);
+    expect(manager.getSamples()).toEqual([expectedSample]);
     expect(manager.getStatus()).toBe('recording');
+  });
+
+  test('calculates positive acceleration when speed increases', () => {
+    const manager = new TripRecordingManager();
+
+    manager.startTrip();
+    manager.recordSample({
+      ...sample,
+      timestamp: 1000,
+      speedMetersPerSecond: 10,
+    });
+    manager.recordSample({
+      ...sample,
+      timestamp: 4000,
+      speedMetersPerSecond: 16,
+    });
+
+    expect(manager.getSamples()[0].accelerationMetersPerSecondSquared).toBeNull();
+    expect(manager.getSamples()[1].accelerationMetersPerSecondSquared).toBe(2);
+  });
+
+  test('calculates negative acceleration when speed decreases', () => {
+    const manager = new TripRecordingManager();
+
+    manager.startTrip();
+    manager.recordSample({
+      ...sample,
+      timestamp: 1000,
+      speedMetersPerSecond: 20,
+    });
+    manager.recordSample({
+      ...sample,
+      timestamp: 5000,
+      speedMetersPerSecond: 8,
+    });
+
+    expect(manager.getSamples()[1].accelerationMetersPerSecondSquared).toBe(-3);
+  });
+
+  test('calculates zero acceleration when speed remains constant', () => {
+    const manager = new TripRecordingManager();
+
+    manager.startTrip();
+    manager.recordSample(sample);
+    manager.recordSample({
+      ...sample,
+      timestamp: 3000,
+    });
+
+    expect(manager.getSamples()[1].accelerationMetersPerSecondSquared).toBe(0);
+  });
+
+  test('handles missing GPS speed measurements', () => {
+    const manager = new TripRecordingManager();
+
+    manager.startTrip();
+    manager.recordSample(sample);
+    manager.recordSample({
+      ...sample,
+      timestamp: 2000,
+      speedMetersPerSecond: null,
+    });
+    manager.recordSample({
+      ...sample,
+      timestamp: 3000,
+      speedMetersPerSecond: 15,
+    });
+
+    expect(manager.getSamples()[1].accelerationMetersPerSecondSquared).toBeNull();
+    expect(manager.getSamples()[2].accelerationMetersPerSecondSquared).toBeNull();
+  });
+
+  test('rejects invalid timestamp intervals for acceleration', () => {
+    const manager = new TripRecordingManager();
+
+    manager.startTrip();
+    manager.recordSample(sample);
+    manager.recordSample({
+      ...sample,
+      timestamp: 1000,
+      speedMetersPerSecond: 20,
+    });
+
+    expect(manager.getSamples()[1].accelerationMetersPerSecondSquared).toBeNull();
   });
 });

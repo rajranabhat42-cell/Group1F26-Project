@@ -8,10 +8,14 @@ export interface TripSession {
   endedAt?: number;
 }
 
+export interface DrivingSample extends LocationSample {
+  accelerationMetersPerSecondSquared: number | null;
+}
+
 export class TripRecordingManager {
   private status: RecordingStatus = 'idle';
   private session: TripSession | null = null;
-  private samples: LocationSample[] = [];
+  private samples: DrivingSample[] = [];
 
   getStatus(): RecordingStatus {
     return this.status;
@@ -59,12 +63,39 @@ export class TripRecordingManager {
       throw new Error('Cannot record GPS data without an active trip.');
     }
 
-    // Store an independent copy of each GPS measurement.
-    this.samples.push({ ...sample });
+    const previous = this.samples[this.samples.length - 1];
+    let acceleration: number | null = null;
+
+    // Calculate acceleration from consecutive valid GPS readings.
+    if (
+      previous &&
+      previous.speedMetersPerSecond !== null &&
+      sample.speedMetersPerSecond !== null &&
+      Number.isFinite(previous.speedMetersPerSecond) &&
+      Number.isFinite(sample.speedMetersPerSecond) &&
+      previous.speedMetersPerSecond >= 0 &&
+      sample.speedMetersPerSecond >= 0 &&
+      Number.isFinite(previous.timestamp) &&
+      Number.isFinite(sample.timestamp) &&
+      sample.timestamp > previous.timestamp
+    ) {
+      const elapsedSeconds =
+        (sample.timestamp - previous.timestamp) / 1000;
+
+      acceleration =
+        (sample.speedMetersPerSecond -
+          previous.speedMetersPerSecond) / elapsedSeconds;
+    }
+
+    // Store the GPS reading with its calculated acceleration.
+    this.samples.push({
+      ...sample,
+      accelerationMetersPerSecondSquared: acceleration,
+    });
   }
 
-  getSamples(): LocationSample[] {
-    // Prevent callers from modifying the internal sample collection.
+  getSamples(): DrivingSample[] {
+    // Prevent callers from modifying stored measurements.
     return this.samples.map(sample => ({ ...sample }));
   }
 }
