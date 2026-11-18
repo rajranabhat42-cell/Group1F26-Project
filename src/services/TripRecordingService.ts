@@ -45,7 +45,22 @@ export class TripRecordingService {
             pendingSamples.push(sample);
           }
         },
-        onError,
+
+        error => {
+          const status = this.manager.getStatus();
+
+          if (status === 'stopped') {
+            return;
+          }
+
+          // Stop recording when location permission is lost.
+          if (error.code === 1 && status === 'recording') {
+            this.stopTrip();
+          }
+
+          // Notify the caller of the location error.
+          onError(error);
+        },
       );
 
       try {
