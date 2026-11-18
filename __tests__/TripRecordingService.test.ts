@@ -148,4 +148,24 @@ describe('TripRecordingService', () => {
     expect(watchPosition).toHaveBeenCalledTimes(1);
     expect(service.getStatus()).toBe('recording');
   });
+
+  test('preserves GPS measurements received during startup', async () => {
+    watchPosition.mockImplementationOnce(onPosition => {
+      onPosition(sample);
+      return 7;
+    });
+
+    await service.startTrip(onError);
+
+    expect(service.getStatus()).toBe('recording');
+    expect(service.getSamples()).toEqual([
+      {
+        timestamp: 1000,
+        latitude: 43.4516,
+        longitude: -80.4925,
+        speedMetersPerSecond: 12.5,
+        accuracyMeters: 5,
+      },
+    ]);
+  });
 });

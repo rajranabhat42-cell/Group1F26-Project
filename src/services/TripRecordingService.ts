@@ -33,12 +33,16 @@ export class TripRecordingService {
           `Precise location permission is required. Status: ${permission}`,
         );
       }
+      
+      const pendingSamples: LocationSample[] = [];
 
-      // Start the location watcher before opening the recording session.
+      // Preserve location updates received during watcher initialization.
       this.tracker.start(
         sample => {
           if (this.manager.getStatus() === 'recording') {
             this.manager.recordSample(sample);
+          } else if (this.starting) {
+            pendingSamples.push(sample);
           }
         },
         onError,
@@ -46,10 +50,16 @@ export class TripRecordingService {
 
       try {
         this.manager.startTrip();
+
+        // Add measurements received before the session became active.
+        for (const sample of pendingSamples) {
+          this.manager.recordSample(sample);
+        }
       } catch (error) {
         this.tracker.stop();
         throw error;
       }
+
     } finally {
       this.starting = false;
     }
