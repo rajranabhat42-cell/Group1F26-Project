@@ -1,3 +1,4 @@
+
 /**
  * @format
  */
@@ -6,7 +7,7 @@ import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
 
-// Mock Supabase so tests do not connect to the real backend
+// Mock Supabase to prevent real backend requests.
 jest.mock('../src/supabase', () => ({
   supabase: {
     auth: {
@@ -24,6 +25,24 @@ jest.mock('../src/supabase', () => ({
     },
   },
 }));
+
+// Mock native GPS functionality for Jest.
+jest.mock('@react-native-community/geolocation', () => ({
+  __esModule: true,
+  default: {
+    watchPosition: jest.fn(),
+    clearWatch: jest.fn(),
+  },
+}));
+
+
+jest.mock('react-native-device-info', () => ({
+  __esModule: true,
+  default: {
+    isLocationEnabled: jest.fn().mockResolvedValue(true),
+  },
+}));
+
 
 test('renders correctly', async () => {
   await ReactTestRenderer.act(async () => {
