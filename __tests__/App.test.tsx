@@ -35,6 +35,15 @@ jest.mock('@react-native-community/geolocation', () => ({
   },
 }));
 
+
+jest.mock('react-native-device-info', () => ({
+  __esModule: true,
+  default: {
+    isLocationEnabled: jest.fn().mockResolvedValue(true),
+  },
+}));
+
+
 test('renders correctly', async () => {
   await ReactTestRenderer.act(async () => {
     ReactTestRenderer.create(<App />);

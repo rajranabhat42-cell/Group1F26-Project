@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,12 +17,13 @@ type ActiveTripScreenProps = {
   errorMessage?: string | null;
 };
 
+// Convert elapsed milliseconds into HH:MM:SS.
 function formatElapsedTime(milliseconds: number): string {
-  const validMilliseconds = Number.isFinite(milliseconds)
+  const safeMilliseconds = Number.isFinite(milliseconds)
     ? Math.max(0, milliseconds)
     : 0;
 
-  const totalSeconds = Math.floor(validMilliseconds / 1000);
+  const totalSeconds = Math.floor(safeMilliseconds / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
@@ -37,63 +39,115 @@ function ActiveTripScreen({
   onStopTrip,
   errorMessage,
 }: ActiveTripScreenProps) {
+  const { width } = useWindowDimensions();
+
   const isRecording = status === 'recording';
 
+  // Identify the device-wide Location warning.
+  const isLocationOff = Boolean(
+    errorMessage?.startsWith('Android Location is turned off.'),
+  );
+
+  const hasGpsWarning =
+    isRecording && Boolean(errorMessage);
+
+  // Do not display an active Location-off warning
+  // after the trip has already stopped.
+  const showWarning =
+    Boolean(errorMessage) &&
+    (isRecording || !isLocationOff);
+
+  // Keep the timer readable on different screen widths.
+  const timerFontSize = Math.min(
+    68,
+    Math.max(40, Math.floor((width - 96) / 4.55)),
+  );
+
+  // Communicate the recording status using text and color.
+  const statusText = !isRecording
+    ? 'STOPPED'
+    : hasGpsWarning
+      ? 'GPS INTERRUPTED'
+      : 'RECORDING';
+
   return (
-    <View style={styles.screen} testID="active-trip-screen">
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>
-          TRIP IN PROGRESS
-        </Text>
-
-        <Text style={styles.pageTitle}>
-          {isRecording ? 'Recording' : 'Trip Stopped'}
-        </Text>
-      </View>
-
+    <SafeAreaView
+      edges={['bottom']}
+      style={styles.screen}
+      testID="active-trip-screen"
+    >
       <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
       >
-        <Text style={styles.introText}>
-          Start and stop only when safely parked.
-        </Text>
+        {/* Page header */}
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>
+            {isRecording ? 'ACTIVE TRIP' : 'TRIP ENDED'}
+          </Text>
 
+          <Text style={styles.pageTitle}>
+            {isRecording ? 'Recording' : 'Trip stopped'}
+          </Text>
+        </View>
+
+        {/* Main recording card */}
         <View style={styles.recordingCard}>
-          <View style={styles.recordingIndicator}>
+
+          {/* Recording status indicator */}
+          <View style={styles.statusRow}>
             <View
               style={[
                 styles.statusDot,
-                !isRecording && styles.stoppedDot,
+                !isRecording
+                  ? styles.stoppedDot
+                  : hasGpsWarning
+                    ? styles.warningDot
+                    : styles.recordingDot,
               ]}
             />
 
             <Text
               style={[
-                styles.statusLabel,
-                !isRecording && styles.stoppedLabel,
+                styles.statusText,
+                !isRecording
+                  ? styles.stoppedText
+                  : hasGpsWarning
+                    ? styles.warningText
+                    : styles.recordingText,
               ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
             >
-              {isRecording ? 'RECORDING' : 'STOPPED'}
+              {statusText}
             </Text>
           </View>
 
-          <Text style={styles.timer} testID="trip-timer">
+          {/* Elapsed recording timer */}
+          <Text style={styles.timerLabel}>
+            ELAPSED TIME
+          </Text>
+
+          <Text
+            style={[
+              styles.timer,
+              { fontSize: timerFontSize },
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            testID="trip-timer"
+          >
             {formatElapsedTime(elapsedMilliseconds)}
           </Text>
 
-          <Text style={styles.recordingTitle}>
-            {isRecording
-              ? 'Recording is active'
-              : 'Recording has ended'}
-          </Text>
+          {/* Saving is not implemented yet. */}
+          {!isRecording ? (
+            <Text style={styles.saveNotice}>
+              Trip data has not been saved yet.
+            </Text>
+          ) : null}
 
-          <Text style={styles.recordingDescription}>
-            {isRecording
-              ? 'Stop only when safely parked.'
-              : 'Trip data has not been saved yet.'}
-          </Text>
-
+          {/* Manual stop control */}
           <Pressable
             style={[
               styles.stopButton,
@@ -109,39 +163,35 @@ function ActiveTripScreen({
               Stop Trip
             </Text>
           </Pressable>
+
+          {/* Driver safety reminder */}
+          <Text style={styles.safetyText}>
+            Only stop when safely parked.
+          </Text>
         </View>
 
-        {errorMessage ? (
-          <View style={styles.warningCard} testID="trip-warning">
+        {/* GPS interruption warning */}
+        {showWarning ? (
+          <View
+            style={styles.warningCard}
+            testID="trip-warning"
+            accessibilityRole="alert"
+          >
             <Text style={styles.warningTitle}>
-              Location Tracking Notice
+              {isLocationOff
+                ? 'Location is off'
+                : 'Location Tracking Notice'}
             </Text>
 
-            <Text style={styles.warningText}>
-              {errorMessage}
+            <Text style={styles.warningDescription}>
+              {isLocationOff
+                ? 'Enable Location in Settings to resume GPS measurements.'
+                : errorMessage}
             </Text>
           </View>
         ) : null}
-
-        <View style={styles.safetyCard}>
-          <Text style={styles.safetyTitle}>
-            Keep your attention on the road.
-          </Text>
-
-          <Text style={styles.safetyDescription}>
-            Trip measurements are collected while recording
-            is active. No live map or driving statistics
-            are shown.
-          </Text>
-        </View>
       </ScrollView>
-
-      <SafeAreaView edges={['bottom']} style={styles.footer}>
-        <Text style={styles.footerText}>
-          MANUAL RECORDING ONLY
-        </Text>
-      </SafeAreaView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -150,144 +200,162 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F7FA',
   },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 20,
-  },
-  eyebrow: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  pageTitle: {
-    color: '#14233D',
-    fontSize: 30,
-    fontWeight: '700',
-  },
-  content: {
+
+  scrollView: {
     flex: 1,
   },
-  contentContainer: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 30,
+
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 28,
+    paddingBottom: 24,
   },
-  introText: {
+
+  header: {
+    marginBottom: 22,
+  },
+
+  eyebrow: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#64748B',
-    fontSize: 13,
-    marginBottom: 16,
+    letterSpacing: 1,
+    marginBottom: 8,
   },
+
+  pageTitle: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: '#14233D',
+  },
+
   recordingCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 26,
+    alignItems: 'center',
   },
-  recordingIndicator: {
+
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
     marginBottom: 24,
   },
+
   statusDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: '#15976A',
-    marginRight: 8,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 10,
   },
+
+  recordingDot: {
+    backgroundColor: '#15976A',
+  },
+
+  warningDot: {
+    backgroundColor: '#D97706',
+  },
+
   stoppedDot: {
     backgroundColor: '#64748B',
   },
-  statusLabel: {
+
+  statusText: {
+    fontSize: 19,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    flexShrink: 1,
+  },
+
+  recordingText: {
     color: '#15976A',
-    fontSize: 12,
-    fontWeight: '700',
   },
-  stoppedLabel: {
+
+  warningText: {
+    color: '#B45309',
+  },
+
+  stoppedText: {
     color: '#64748B',
   },
-  timer: {
-    color: '#14233D',
-    fontSize: 48,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-    marginBottom: 22,
-  },
-  recordingTitle: {
-    color: '#14233D',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  recordingDescription: {
-    color: '#64748B',
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  stopButton: {
-    backgroundColor: '#FF6B20',
-    borderRadius: 14,
-    paddingVertical: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  stopButtonText: {
-    color: '#14233D',
+
+  timerLabel: {
     fontSize: 15,
-    fontWeight: '700',
-  },
-  safetyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-  },
-  safetyTitle: {
-    color: '#14233D',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  safetyDescription: {
+    fontWeight: '600',
     color: '#64748B',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  warningCard: {
-    backgroundColor: '#FFF2E8',
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 16,
-  },
-  warningTitle: {
-    color: '#14233D',
-    fontSize: 15,
-    fontWeight: '700',
+    letterSpacing: 1,
     marginBottom: 8,
   },
-  warningText: {
+
+  timer: {
     color: '#14233D',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  footer: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 12,
-  },
-  footerText: {
-    color: '#64748B',
-    fontSize: 11,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+
+  saveNotice: {
+    fontSize: 16,
+    lineHeight: 23,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+
+  stopButton: {
+    width: '100%',
+    minHeight: 72,
+    borderRadius: 16,
+    backgroundColor: '#FF6B20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+  },
+
+  disabledButton: {
+    opacity: 0.45,
+  },
+
+  stopButtonText: {
+    color: '#14233D',
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  safetyText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 18,
+  },
+
+  warningCard: {
+    backgroundColor: '#FFF2E8',
+    borderRadius: 18,
+    padding: 18,
+    marginTop: 16,
+  },
+
+  warningTitle: {
+    color: '#14233D',
+    fontSize: 19,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+
+  warningDescription: {
+    color: '#14233D',
+    fontSize: 16,
+    lineHeight: 23,
   },
 });
 

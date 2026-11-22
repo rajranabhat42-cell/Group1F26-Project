@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -22,8 +23,13 @@ import ActiveTripScreen from './src/screens/ActiveTripScreen';
 import LogoutButton from './src/components/LogoutButton';
 import { TripRecordingService } from './src/services/TripRecordingService';
 import type { LocationTrackingError } from './src/services/TripLocationTracker';
+import { checkLocationAvailability } from './src/services/locationAvailability';
 
 type TripDisplayStatus = 'idle' | 'recording' | 'stopped';
+
+const LOCATION_DISABLED_MESSAGE =
+  'Android Location is turned off. GPS measurements may be interrupted. ' +
+  'Enable Location in Settings to continue collecting driving data.';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -39,6 +45,7 @@ function App() {
   const [isStartingTrip, setIsStartingTrip] = useState(false);
   const [elapsedMilliseconds, setElapsedMilliseconds] = useState(0);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationDisabled, setLocationDisabled] = useState(false);
 
   useEffect(() => {
     // Restore the existing authentication session.
@@ -85,6 +92,67 @@ function App() {
     };
   }, [tripStatus, tripService]);
 
+  // Monitor device-wide Location availability during recording.
+  useEffect(() => {
+    if (tripStatus !== 'recording') {
+      return;
+    }
+
+    let active = true;
+    let checking = false;
+
+    const checkLocation = async () => {
+      if (
+        !active ||
+        checking ||
+        AppState.currentState !== 'active'
+      ) {
+        return;
+      }
+
+      checking = true;
+
+      try {
+        const availability = await checkLocationAvailability();
+
+        if (!active || tripService.getStatus() !== 'recording') {
+          return;
+        }
+
+        if (availability === 'disabled') {
+          setLocationDisabled(true);
+        } else if (availability === 'enabled') {
+          setLocationDisabled(false);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    // Check immediately and periodically while the app is active.
+    void checkLocation();
+
+    const interval = setInterval(() => {
+      void checkLocation();
+    }, 5000);
+
+    // Recheck after returning from Android Settings.
+    const subscription = AppState.addEventListener(
+      'change',
+      nextState => {
+        if (nextState === 'active') {
+          void checkLocation();
+        }
+      },
+    );
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [tripStatus, tripService]);
+
   const handleGpsError = (error: LocationTrackingError) => {
     setLocationError(error.message);
 
@@ -102,8 +170,20 @@ function App() {
 
     setIsStartingTrip(true);
     setLocationError(null);
+    setLocationDisabled(false);
 
     try {
+      // Check device-wide Location before starting the GPS watcher.
+      const availability = await checkLocationAvailability();
+
+      if (availability === 'disabled') {
+        Alert.alert(
+          'Location Disabled',
+          'Turn on Android Location in Settings before starting a trip.',
+        );
+        return;
+      }
+
       // Check permissions and start the GPS watcher.
       await tripService.startTrip(handleGpsError);
 
@@ -156,7 +236,11 @@ function App() {
               elapsedMilliseconds={elapsedMilliseconds}
               status={tripStatus}
               onStopTrip={handleStopTrip}
-              errorMessage={locationError}
+              errorMessage={
+                locationDisabled
+                  ? LOCATION_DISABLED_MESSAGE
+                  : locationError
+              }
             />
           ) : (
             <>
