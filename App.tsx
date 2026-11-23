@@ -130,10 +130,10 @@ function App() {
     };
 
     // Check immediately and periodically while the app is active.
-    void checkLocation();
+    checkLocation();
 
     const interval = setInterval(() => {
-      void checkLocation();
+  checkLocation();
     }, 5000);
 
     // Recheck after returning from Android Settings.
@@ -141,7 +141,7 @@ function App() {
       'change',
       nextState => {
         if (nextState === 'active') {
-          void checkLocation();
+         checkLocation();
         }
       },
     );
