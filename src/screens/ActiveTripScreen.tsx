@@ -10,11 +10,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+type TripSaveStatus = 'idle' | 'saving' | 'saved' | 'failed';
+
 type ActiveTripScreenProps = {
   elapsedMilliseconds: number;
   status: 'recording' | 'stopped';
   onStopTrip: () => void;
+  onRetrySave?: () => void;
   errorMessage?: string | null;
+  saveStatus?: TripSaveStatus;
 };
 
 // Convert elapsed milliseconds into HH:MM:SS.
@@ -37,7 +41,9 @@ function ActiveTripScreen({
   elapsedMilliseconds,
   status,
   onStopTrip,
+  onRetrySave,
   errorMessage,
+  saveStatus = 'idle',
 }: ActiveTripScreenProps) {
   const { width } = useWindowDimensions();
 
@@ -63,12 +69,28 @@ function ActiveTripScreen({
     Math.max(40, Math.floor((width - 96) / 4.55)),
   );
 
-  // Communicate the recording status using text and color.
-  const statusText = !isRecording
-    ? 'STOPPED'
-    : hasGpsWarning
+  // Communicate the recording and saving statuses.
+  const statusText = isRecording
+    ? hasGpsWarning
       ? 'GPS INTERRUPTED'
-      : 'RECORDING';
+      : 'RECORDING'
+    : saveStatus === 'saving'
+      ? 'SAVING'
+      : saveStatus === 'saved'
+        ? 'SAVED'
+        : saveStatus === 'failed'
+          ? 'SAVE FAILED'
+          : 'STOPPED';
+
+  // Display the appropriate message after recording ends.
+  const saveMessage =
+    saveStatus === 'saving'
+      ? 'Saving your trip...'
+      : saveStatus === 'saved'
+        ? 'Trip saved successfully. Analysis pending.'
+        : saveStatus === 'failed'
+          ? 'Trip save failed. Your recording is available for retry while the app remains open.'
+          : 'Trip data has not been saved yet.';
 
   return (
     <SafeAreaView
@@ -87,37 +109,58 @@ function ActiveTripScreen({
           </Text>
 
           <Text style={styles.pageTitle}>
-            {isRecording ? 'Recording' : 'Trip stopped'}
+            {isRecording
+              ? 'Recording'
+              : saveStatus === 'saving'
+                ? 'Saving trip'
+                : saveStatus === 'saved'
+                  ? 'Trip saved'
+                  : saveStatus === 'failed'
+                    ? 'Save failed'
+                    : 'Trip stopped'}
           </Text>
         </View>
 
         {/* Main recording card */}
         <View style={styles.recordingCard}>
 
-          {/* Recording status indicator */}
+          {/* Recording and save status indicator */}
           <View style={styles.statusRow}>
             <View
               style={[
                 styles.statusDot,
-                !isRecording
-                  ? styles.stoppedDot
-                  : hasGpsWarning
+                isRecording
+                  ? hasGpsWarning
                     ? styles.warningDot
-                    : styles.recordingDot,
+                    : styles.recordingDot
+                  : saveStatus === 'saved'
+                    ? styles.recordingDot
+                    : saveStatus === 'failed'
+                      ? styles.errorDot
+                      : saveStatus === 'saving'
+                        ? styles.warningDot
+                        : styles.stoppedDot,
               ]}
             />
 
             <Text
               style={[
                 styles.statusText,
-                !isRecording
-                  ? styles.stoppedText
-                  : hasGpsWarning
+                isRecording
+                  ? hasGpsWarning
                     ? styles.warningText
-                    : styles.recordingText,
+                    : styles.recordingText
+                  : saveStatus === 'saved'
+                    ? styles.recordingText
+                    : saveStatus === 'failed'
+                      ? styles.errorText
+                      : saveStatus === 'saving'
+                        ? styles.warningText
+                        : styles.stoppedText,
               ]}
               numberOfLines={1}
               adjustsFontSizeToFit
+              testID="trip-status"
             >
               {statusText}
             </Text>
@@ -140,11 +183,32 @@ function ActiveTripScreen({
             {formatElapsedTime(elapsedMilliseconds)}
           </Text>
 
-          {/* Saving is not implemented yet. */}
+          {/* US06: Display the current saving state. */}
           {!isRecording ? (
-            <Text style={styles.saveNotice}>
-              Trip data has not been saved yet.
+            <Text
+              style={styles.saveNotice}
+              testID="trip-save-status"
+              accessibilityRole="text"
+            >
+              {saveMessage}
             </Text>
+          ) : null}
+
+          {/* US06: Retry a failed save using the same trip. */}
+          {!isRecording &&
+          saveStatus === 'failed' &&
+          onRetrySave ? (
+            <Pressable
+              style={styles.retryButton}
+              onPress={onRetrySave}
+              accessibilityRole="button"
+              accessibilityLabel="Retry Save"
+              testID="retry-save-button"
+            >
+              <Text style={styles.retryButtonText}>
+                Retry Save
+              </Text>
+            </Pressable>
           ) : null}
 
           {/* Manual stop control */}
@@ -265,6 +329,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#64748B',
   },
 
+  errorDot: {
+    backgroundColor: '#DC2626',
+  },
+
   statusText: {
     fontSize: 19,
     fontWeight: '700',
@@ -284,12 +352,16 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
 
+  errorText: {
+    color: '#DC2626',
+  },
+
   timerLabel: {
     fontSize: 15,
     fontWeight: '600',
     color: '#64748B',
-    letterSpacing: 1,
     marginBottom: 8,
+    letterSpacing: 1,
   },
 
   timer: {
@@ -328,6 +400,25 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     textAlign: 'center',
+  },
+
+  // US06: Retry button shown after a failed save.
+  retryButton: {
+    width: '100%',
+    minHeight: 56,
+    borderRadius: 16,
+    backgroundColor: '#FF6B20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    marginBottom: 20,
+  },
+
+  retryButtonText: {
+    color: '#14233D',
+    fontSize: 18,
+    fontWeight: '700',
   },
 
   safetyText: {

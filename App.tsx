@@ -14,6 +14,7 @@ import {
   SafeAreaView,
 } from 'react-native-safe-area-context';
 import type { Session } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 
 import { supabase } from './src/supabase';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -24,8 +25,13 @@ import LogoutButton from './src/components/LogoutButton';
 import { TripRecordingService } from './src/services/TripRecordingService';
 import type { LocationTrackingError } from './src/services/TripLocationTracker';
 import { checkLocationAvailability } from './src/services/locationAvailability';
+import {
+  saveRecordedTrip,
+  type TripSaveRequest,
+} from './src/services/TripPersistenceService';
 
 type TripDisplayStatus = 'idle' | 'recording' | 'stopped';
+type TripSaveStatus = 'idle' | 'saving' | 'saved' | 'failed';
 
 const LOCATION_DISABLED_MESSAGE =
   'Android Location is turned off. GPS measurements may be interrupted. ' +
@@ -38,6 +44,14 @@ function App() {
 
   // Maintain one recording service instance.
   const [tripService] = useState(() => new TripRecordingService());
+
+  // US06: Track the database saving process.
+  const [saveStatus, setSaveStatus] =
+    useState<TripSaveStatus>('idle');
+
+  // US06: Preserve the original trip and ID for retries.
+  const [pendingTrip, setPendingTrip] =
+    useState<TripSaveRequest | null>(null);
 
   const [tripStatus, setTripStatus] =
     useState<TripDisplayStatus>('idle');
@@ -201,22 +215,94 @@ function App() {
     }
   };
 
-  const handleStopTrip = () => {
+  // US06: Stop recording and save the completed trip.
+  const handleStopTrip = async () => {
     if (tripService.getStatus() !== 'recording') {
       return;
     }
 
     try {
-      // Stop collecting new GPS measurements.
+      // Stop collecting GPS measurements and freeze the timer.
       tripService.stopTrip();
 
       setElapsedMilliseconds(tripService.getElapsedTime());
       setTripStatus('stopped');
-    } catch {
+
+      // Retrieve the completed recording.
+      const tripSession = tripService.getSession();
+
+      if (!tripSession || tripSession.endedAt === undefined) {
+        throw new Error('Completed trip information is unavailable.');
+      }
+
+      // Generate one unique ID for the completed trip.
+      const trip: TripSaveRequest = {
+        tripId: uuidv4(),
+        startedAt: tripSession.startedAt,
+        endedAt: tripSession.endedAt,
+        distanceKm: null,
+        timeZone:
+          Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        samples: tripService.getSamples(),
+      };
+
+      // Retain the trip data for retries while the app is open.
+      setPendingTrip(trip);
+      setSaveStatus('saving');
+
+      try {
+        // Save the trip and all GPS measurements atomically.
+        await saveRecordedTrip(trip);
+
+        setSaveStatus('saved');
+        setPendingTrip(null);
+      } catch (error) {
+        setSaveStatus('failed');
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to save the trip.';
+
+        Alert.alert('Trip Save Failed', message);
+      }
+    } catch (error) {
       Alert.alert(
-        'Unable to Stop Trip',
-        'An error occurred while stopping the recording.',
+        'Unable to Finish Trip',
+        error instanceof Error
+          ? error.message
+          : 'An unexpected error occurred.',
       );
+    }
+  };
+
+  // US06: Retry a failed save without creating a duplicate trip.
+  const handleRetrySave = async () => {
+    // Retry only if a failed trip is available.
+    if (saveStatus !== 'failed' || !pendingTrip) {
+      return;
+    }
+
+    // Update the interface while the retry is in progress.
+    setSaveStatus('saving');
+
+    try {
+      // Reuse the same trip ID and original measurements.
+      await saveRecordedTrip(pendingTrip);
+
+      // Confirm successful saving.
+      setSaveStatus('saved');
+      setPendingTrip(null);
+    } catch (error) {
+      // Preserve the trip so another retry remains possible.
+      setSaveStatus('failed');
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to save the trip. Please try again.';
+
+      Alert.alert('Trip Save Failed', message);
     }
   };
 
@@ -236,6 +322,8 @@ function App() {
               elapsedMilliseconds={elapsedMilliseconds}
               status={tripStatus}
               onStopTrip={handleStopTrip}
+              onRetrySave={handleRetrySave}
+              saveStatus={saveStatus}
               errorMessage={
                 locationDisabled
                   ? LOCATION_DISABLED_MESSAGE
