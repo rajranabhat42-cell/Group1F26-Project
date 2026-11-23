@@ -45,7 +45,8 @@ export class EventDetectionService {
           roadSpeedLimitKmh !== undefined &&
           Number.isFinite(roadSpeedLimitKmh) &&
           roadSpeedLimitKmh > 0 &&
-          speedKmh > roadSpeedLimitKmh + this.SPEEDING_THRESHOLD_KMH
+          sample.speedMetersPerSecond >
+          (roadSpeedLimitKmh + this.SPEEDING_THRESHOLD_KMH) / 3.6
         ) {
           events.push({
             eventType: 'speeding',

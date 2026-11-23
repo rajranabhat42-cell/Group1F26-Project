@@ -25,7 +25,7 @@ describe('EventDetectionService', () => {
 
   test('detects speeding when more than 10 km/h above the speed limit', () => {
     const sample = createSample({
-      speedMetersPerSecond: 30 / 3.6,
+      speedMetersPerSecond: 31 / 3.6,
       roadSpeedLimitKmh: 20,
     });
 
