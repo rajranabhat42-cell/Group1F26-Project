@@ -25,10 +25,17 @@ import LogoutButton from './src/components/LogoutButton';
 import { TripRecordingService } from './src/services/TripRecordingService';
 import type { LocationTrackingError } from './src/services/TripLocationTracker';
 import { checkLocationAvailability } from './src/services/locationAvailability';
+
 import {
   saveRecordedTrip,
   type TripSaveRequest,
 } from './src/services/TripPersistenceService';
+
+import {
+  storePendingTrip,
+  loadPendingTrip,
+  clearPendingTrip,
+} from './src/services/TripPendingStorage';
 
 type TripDisplayStatus = 'idle' | 'recording' | 'stopped';
 type TripSaveStatus = 'idle' | 'saving' | 'saved' | 'failed';
@@ -53,6 +60,10 @@ function App() {
   const [pendingTrip, setPendingTrip] =
     useState<TripSaveRequest | null>(null);
 
+  // US06: Track which driver's pending trip has been checked.
+  const [restoredUserId, setRestoredUserId] =
+    useState<string | null>(null);
+
   const [tripStatus, setTripStatus] =
     useState<TripDisplayStatus>('idle');
 
@@ -63,12 +74,14 @@ function App() {
 
   useEffect(() => {
     // Restore the existing authentication session.
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setReady(true);
-    }).catch(() => {
-      setReady(true);
-    });
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        setSession(data.session);
+        setReady(true);
+      })
+      .catch(() => {
+        setReady(true);
+      });
 
     // Update the interface when authentication state changes.
     const { data: { subscription } } =
@@ -90,6 +103,64 @@ function App() {
       subscription.unsubscribe();
     };
   }, [tripService]);
+
+  // US06: Recover an unsaved trip after restarting the app.
+  useEffect(() => {
+    const driverId = session?.user.id;
+
+    if (!driverId) {
+      setRestoredUserId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const restorePendingTrip = async () => {
+      try {
+        // Check for a locally stored trip belonging to this driver.
+        const storedTrip = await loadPendingTrip(driverId);
+
+        if (cancelled) {
+          return;
+        }
+
+        // Restore the trip only when no recording is active.
+        if (storedTrip && tripService.getStatus() === 'idle') {
+          setPendingTrip(storedTrip);
+
+          // Restore the original recording duration.
+          setElapsedMilliseconds(
+            Math.max(
+              0,
+              storedTrip.endedAt - storedTrip.startedAt,
+            ),
+          );
+
+          // Show the stopped screen with a Retry Save button.
+          setTripStatus('stopped');
+          setSaveStatus('failed');
+        }
+
+        setRestoredUserId(driverId);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('Unable to recover pending trip:', error);
+
+          Alert.alert(
+            'Trip Recovery Failed',
+            'Unable to read your locally saved trip. ' +
+              'Avoid recording another trip until this is resolved.',
+          );
+        }
+      }
+    };
+
+    void restorePendingTrip();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user.id, tripService]);
 
   // Refresh the displayed timer while recording.
   useEffect(() => {
@@ -251,20 +322,38 @@ function App() {
       setSaveStatus('saving');
 
       try {
-        // Save the trip and all GPS measurements atomically.
+        const driverId = session?.user.id;
+
+        if (!driverId) {
+          throw new Error('You must be signed in to save a trip.');
+        }
+
+        // Store the completed trip locally before uploading.
+        await storePendingTrip(driverId, trip);
+
+        // Upload the trip and measurements to Supabase.
         await saveRecordedTrip(trip);
 
+        // Remove the local copy only after successful saving.
+        try {
+          await clearPendingTrip(driverId, trip.tripId);
+        } catch (cleanupError) {
+          console.warn('Unable to clear local trip:', cleanupError);
+        }
+
+        // Confirm that Supabase saved the trip.
         setSaveStatus('saved');
         setPendingTrip(null);
       } catch (error) {
+        // Keep the trip available for another attempt.
         setSaveStatus('failed');
 
-        const message =
+        Alert.alert(
+          'Trip Save Failed',
           error instanceof Error
             ? error.message
-            : 'Unable to save the trip.';
-
-        Alert.alert('Trip Save Failed', message);
+            : 'Unable to save the trip.',
+        );
       }
     } catch (error) {
       Alert.alert(
@@ -287,22 +376,37 @@ function App() {
     setSaveStatus('saving');
 
     try {
-      // Reuse the same trip ID and original measurements.
+      const driverId = session?.user.id;
+
+      if (!driverId) {
+        throw new Error('You must be signed in to retry.');
+      }
+
+      // Preserve the original recording locally.
+      await storePendingTrip(driverId, pendingTrip);
+
+      // Retry with the SAME trip ID to prevent duplicates.
       await saveRecordedTrip(pendingTrip);
 
-      // Confirm successful saving.
+      // Remove the local copy after a confirmed save.
+      try {
+        await clearPendingTrip(driverId, pendingTrip.tripId);
+      } catch (cleanupError) {
+        console.warn('Unable to clear local trip:', cleanupError);
+      }
+
       setSaveStatus('saved');
       setPendingTrip(null);
     } catch (error) {
-      // Preserve the trip so another retry remains possible.
+      // Keep the original trip available for another retry.
       setSaveStatus('failed');
 
-      const message =
+      Alert.alert(
+        'Trip Save Failed',
         error instanceof Error
           ? error.message
-          : 'Unable to save the trip. Please try again.';
-
-      Alert.alert('Trip Save Failed', message);
+          : 'Unable to save the trip. Please try again.',
+      );
     }
   };
 
@@ -314,7 +418,7 @@ function App() {
         style={styles.container}
         edges={['top']}
       >
-        {!ready ? (
+        {!ready || (session && restoredUserId !== session.user.id) ? (
           <ActivityIndicator size="large" />
         ) : session ? (
           tripStatus !== 'idle' ? (
@@ -373,10 +477,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F0E8',
   },
+
   switchButton: {
     padding: 20,
     alignItems: 'center',
   },
+
   switchText: {
     color: '#3E2C23',
     fontSize: 15,

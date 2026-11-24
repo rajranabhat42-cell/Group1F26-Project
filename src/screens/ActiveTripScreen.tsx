@@ -87,9 +87,9 @@ function ActiveTripScreen({
     saveStatus === 'saving'
       ? 'Saving your trip...'
       : saveStatus === 'saved'
-        ? 'Trip saved successfully. Analysis pending.'
+        ? 'Trip saved. Analysis pending. No score is available until analysis completes.'
         : saveStatus === 'failed'
-          ? 'Trip save failed. Your recording is available for retry while the app remains open.'
+          ? 'Trip save failed. Your recording has been saved locally and can be retried.'
           : 'Trip data has not been saved yet.';
 
   return (
@@ -211,30 +211,30 @@ function ActiveTripScreen({
             </Pressable>
           ) : null}
 
-          {/* Manual stop control */}
-          <Pressable
-            style={[
-              styles.stopButton,
-              !isRecording && styles.disabledButton,
-            ]}
-            onPress={onStopTrip}
-            disabled={!isRecording}
-            accessibilityRole="button"
-            accessibilityLabel="Stop Trip"
-            testID="stop-trip-button"
-          >
-            <Text style={styles.stopButtonText}>
-              Stop Trip
-            </Text>
-          </Pressable>
+          {/* Stop Trip is available only during recording. */}
+          {isRecording ? (
+            <Pressable
+              style={styles.stopButton}
+              onPress={onStopTrip}
+              accessibilityRole="button"
+              accessibilityLabel="Stop Trip"
+              testID="stop-trip-button"
+            >
+              <Text style={styles.stopButtonText}>
+                Stop Trip
+              </Text>
+            </Pressable>
+          ) : null}
 
           {/* Driver safety reminder */}
-          <Text style={styles.safetyText}>
-            Only stop when safely parked.
-          </Text>
+          {isRecording ? (
+            <Text style={styles.safetyText}>
+              Only stop when safely parked.
+            </Text>
+          ) : null}
         </View>
 
-        {/* GPS interruption warning */}
+        {/* GPS interruption warning */}  
         {showWarning ? (
           <View
             style={styles.warningCard}

@@ -13,7 +13,7 @@ import {
 } from './TripRecordingManager';
 
 export class TripRecordingService {
-  private readonly manager = new TripRecordingManager();
+  private manager = new TripRecordingManager();
   private readonly tracker = new TripLocationTracker();
   private starting = false;
 
@@ -98,6 +98,22 @@ export class TripRecordingService {
 
     this.manager.stopTrip();
     this.tracker.stop();
+  }
+
+  // Reset the recording service after the trip has been successfully saved and the driver leaves the trip screen.
+  resetTrip(): void {
+    if (
+      this.starting ||
+      this.manager.getStatus() === 'recording'
+    ) {
+      throw new Error('Cannot reset an active trip.');
+    }
+
+    // Ensure GPS tracking is no longer running.
+    this.tracker.stop();
+
+    // Create a fresh manager for the next recording.
+    this.manager = new TripRecordingManager();
   }
 
   getStatus(): RecordingStatus {
