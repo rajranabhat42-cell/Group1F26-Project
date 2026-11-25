@@ -1,15 +1,19 @@
+
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://fhjjsimgoarkaczdejym.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_edLsfrrLDA1sLFKxI7uuiA_ZEV6nEVg'; 
 
+const SUPABASE_ANON_KEY =
+  'sb_publishable_edLsfrrLDA1sLFKxI7uuiA_ZEV6nEVg';
+
+// Initialize the Supabase client.
 export const supabase = createClient(
-    SUPABASE_URL,
-     SUPABASE_ANON_KEY,
-    {
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  {
     auth: {
       storage: AsyncStorage,
       autoRefreshToken: true,
@@ -19,11 +23,11 @@ export const supabase = createClient(
   },
 );
 
+// Refresh authentication tokens while the app is active.
 AppState.addEventListener('change', state => {
   if (state === 'active') {
     supabase.auth.startAutoRefresh();
   } else {
     supabase.auth.stopAutoRefresh();
   }
-}
-     );
+});
