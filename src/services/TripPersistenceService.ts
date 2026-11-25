@@ -2,7 +2,9 @@
 import { supabase } from '../supabase';
 import type { DrivingSample } from './TripRecordingManager';
 
-// Data required to save one completed trip.
+export type SavedRecordingStatus = 'stopped' | 'incomplete';
+
+// Data required to save one completed or interrupted trip.
 export interface TripSaveRequest {
   tripId: string;
   startedAt: number;
@@ -10,20 +12,18 @@ export interface TripSaveRequest {
   distanceKm: number | null;
   timeZone: string;
   samples: DrivingSample[];
+  recordingStatus?: SavedRecordingStatus;
 }
 
-/*
- * Saves a completed trip and its GPS measurements
- * using the atomic Supabase database function.
- *
- * The same trip ID must be reused for retries
- * to prevent duplicate trip records.
+/**
+ * Save a trip and its GPS measurements atomically.
+ * Reuse the original UUID on every retry.
  */
 export async function saveRecordedTrip(
   trip: TripSaveRequest,
 ): Promise<void> {
   const { data, error } = await supabase.rpc(
-    'save_recorded_trip',
+    'save_recorded_trip_v2',
     {
       p_trip_id: trip.tripId,
       p_started_at: new Date(trip.startedAt).toISOString(),
@@ -31,6 +31,7 @@ export async function saveRecordedTrip(
       p_time_zone: trip.timeZone,
       p_distance_km: trip.distanceKm,
       p_samples: trip.samples,
+      p_recording_status: trip.recordingStatus ?? 'stopped',
     },
   );
 
@@ -38,7 +39,6 @@ export async function saveRecordedTrip(
     throw new Error(`Unable to save trip: ${error.message}`);
   }
 
-  // Confirm that the database saved the expected trip.
   if (data !== trip.tripId) {
     throw new Error('Trip save could not be confirmed.');
   }

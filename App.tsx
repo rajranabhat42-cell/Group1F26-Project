@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -29,6 +29,7 @@ import { checkLocationAvailability } from './src/services/locationAvailability';
 import {
   saveRecordedTrip,
   type TripSaveRequest,
+  type SavedRecordingStatus,
 } from './src/services/TripPersistenceService';
 
 import {
@@ -52,50 +53,97 @@ function App() {
   // Maintain one recording service instance.
   const [tripService] = useState(() => new TripRecordingService());
 
-  // US06: Track the database saving process.
+  // Track the trip saving process.
   const [saveStatus, setSaveStatus] =
     useState<TripSaveStatus>('idle');
 
-  // US06: Preserve the original trip and ID for retries.
+  // Preserve unsaved trips for retry.
   const [pendingTrip, setPendingTrip] =
     useState<TripSaveRequest | null>(null);
 
-  // US06: Track which driver's pending trip has been checked.
+  // Track which driver's pending trip has been checked.
   const [restoredUserId, setRestoredUserId] =
     useState<string | null>(null);
 
   const [tripStatus, setTripStatus] =
     useState<TripDisplayStatus>('idle');
 
+  const [completedRecordingStatus, setCompletedRecordingStatus] =
+    useState<SavedRecordingStatus>('stopped');
+
   const [isStartingTrip, setIsStartingTrip] = useState(false);
   const [elapsedMilliseconds, setElapsedMilliseconds] = useState(0);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationDisabled, setLocationDisabled] = useState(false);
 
+  // Keep the same trip ID throughout recording and retries.
+  const activeTripIdRef = useRef<string | null>(null);
+  const activeTripDriverRef = useRef<string | null>(null);
+
+  // Ensure local backups are written in order.
+  const checkpointWritesRef = useRef<Promise<void>>(
+    Promise.resolve(),
+  );
+
+  // Prevent duplicate finishing operations.
+  const finishingTripRef = useRef(false);
+
+  // Keep track of the authenticated driver.
+  const signedInDriverRef = useRef<string | null>(null);
+
+  // Reset the current recording interface on account changes.
+  const resetTripInterface = () => {
+    if (tripService.getStatus() === 'recording') {
+      tripService.stopTrip();
+    }
+
+    if (tripService.getStatus() === 'stopped') {
+      tripService.resetTrip();
+    }
+
+    activeTripIdRef.current = null;
+    activeTripDriverRef.current = null;
+
+    setTripStatus('idle');
+    setSaveStatus('idle');
+    setPendingTrip(null);
+    setCompletedRecordingStatus('stopped');
+    setElapsedMilliseconds(0);
+    setLocationError(null);
+    setLocationDisabled(false);
+    setRestoredUserId(null);
+  };
+
+  // Authentication handling.
   useEffect(() => {
-    // Restore the existing authentication session.
     supabase.auth.getSession()
       .then(({ data }) => {
         setSession(data.session);
         setReady(true);
       })
-      .catch(() => {
+      .catch(error => {
+        console.warn('Unable to restore session:', error);
         setReady(true);
       });
 
-    // Update the interface when authentication state changes.
     const { data: { subscription } } =
       supabase.auth.onAuthStateChange((event, newSession) => {
+        const newDriverId = newSession?.user.id ?? null;
+
+        if (signedInDriverRef.current !== newDriverId) {
+          if (signedInDriverRef.current !== null) {
+            // Preserve the old driver's local backup.
+            resetTripInterface();
+          }
+
+          signedInDriverRef.current = newDriverId;
+        }
+
         setSession(newSession);
         setReady(true);
 
         if (event === 'SIGNED_OUT') {
           setShowRegister(false);
-
-          if (tripService.getStatus() === 'recording') {
-            tripService.stopTrip();
-            setTripStatus('stopped');
-          }
         }
       });
 
@@ -104,7 +152,7 @@ function App() {
     };
   }, [tripService]);
 
-  // US06: Recover an unsaved trip after restarting the app.
+  // Recover a pending or interrupted trip after reopening.
   useEffect(() => {
     const driverId = session?.user.id;
 
@@ -117,18 +165,19 @@ function App() {
 
     const restorePendingTrip = async () => {
       try {
-        // Check for a locally stored trip belonging to this driver.
         const storedTrip = await loadPendingTrip(driverId);
 
         if (cancelled) {
           return;
         }
 
-        // Restore the trip only when no recording is active.
         if (storedTrip && tripService.getStatus() === 'idle') {
           setPendingTrip(storedTrip);
 
-          // Restore the original recording duration.
+          setCompletedRecordingStatus(
+            storedTrip.recordingStatus ?? 'stopped',
+          );
+
           setElapsedMilliseconds(
             Math.max(
               0,
@@ -136,7 +185,6 @@ function App() {
             ),
           );
 
-          // Show the stopped screen with a Retry Save button.
           setTripStatus('stopped');
           setSaveStatus('failed');
         }
@@ -148,8 +196,8 @@ function App() {
 
           Alert.alert(
             'Trip Recovery Failed',
-            'Unable to read your locally saved trip. ' +
-              'Avoid recording another trip until this is resolved.',
+            'Unable to recover your recording. ' +
+              'Avoid starting another trip until this is resolved.',
           );
         }
       }
@@ -162,7 +210,44 @@ function App() {
     };
   }, [session?.user.id, tripService]);
 
-  // Refresh the displayed timer while recording.
+  // Save an ordered local snapshot during recording.
+  const saveRecordingCheckpoint = (
+    driverId: string,
+  ): Promise<void> => {
+    const tripId = activeTripIdRef.current;
+    const tripSession = tripService.getSession();
+
+    if (
+      !tripId ||
+      !tripSession ||
+      activeTripDriverRef.current !== driverId
+    ) {
+      return Promise.resolve();
+    }
+
+    const checkpoint: TripSaveRequest = {
+      tripId,
+      startedAt: tripSession.startedAt,
+      endedAt:
+        tripSession.endedAt ??
+        Math.max(Date.now(), tripSession.startedAt),
+      distanceKm: null,
+      timeZone:
+        Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      samples: tripService.getSamples(),
+      recordingStatus: 'incomplete',
+    };
+
+    const nextWrite = checkpointWritesRef.current
+      .catch(() => undefined)
+      .then(() => storePendingTrip(driverId, checkpoint));
+
+    checkpointWritesRef.current = nextWrite;
+
+    return nextWrite;
+  };
+
+  // Refresh the timer during recording.
   useEffect(() => {
     if (tripStatus !== 'recording') {
       return;
@@ -177,7 +262,30 @@ function App() {
     };
   }, [tripStatus, tripService]);
 
-  // Monitor device-wide Location availability during recording.
+  // Save recording progress locally every two seconds.
+  useEffect(() => {
+    const driverId = session?.user.id;
+
+    if (tripStatus !== 'recording' || !driverId) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (tripService.getStatus() !== 'recording') {
+        return;
+      }
+
+      void saveRecordingCheckpoint(driverId).catch(error => {
+        console.warn('Recording checkpoint failed:', error);
+      });
+    }, 2000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [tripStatus, session?.user.id, tripService]);
+
+  // Monitor Android Location availability.
   useEffect(() => {
     if (tripStatus !== 'recording') {
       return;
@@ -209,19 +317,21 @@ function App() {
         } else if (availability === 'enabled') {
           setLocationDisabled(false);
         }
+      } catch (error) {
+        console.warn('Location availability check failed:', error);
       } finally {
         checking = false;
       }
     };
 
-    // Check immediately and periodically while the app is active.
+    // Check immediately while recording.
     void checkLocation();
 
     const interval = setInterval(() => {
       void checkLocation();
     }, 5000);
 
-    // Recheck after returning from Android Settings.
+    // Check again after returning from Android Settings.
     const subscription = AppState.addEventListener(
       'change',
       nextState => {
@@ -238,18 +348,156 @@ function App() {
     };
   }, [tripStatus, tripService]);
 
-  const handleGpsError = (error: LocationTrackingError) => {
-    setLocationError(error.message);
+  /**
+   * Save a manually stopped or interrupted trip.
+   *
+   * Timing logs identify whether slow saving comes from:
+   * 1. Waiting for local checkpoints.
+   * 2. Writing the final trip to local storage.
+   * 3. Uploading the trip to Supabase.
+   */
+  const finishAndSaveTrip = async (
+    recordingStatus: SavedRecordingStatus,
+  ) => {
+    if (
+      finishingTripRef.current ||
+      tripService.getStatus() !== 'stopped'
+    ) {
+      return;
+    }
 
-    // The service automatically stops if GPS permission is lost.
-    if (tripService.getStatus() === 'stopped') {
-      setElapsedMilliseconds(tripService.getElapsedTime());
-      setTripStatus('stopped');
+    finishingTripRef.current = true;
+
+    setElapsedMilliseconds(tripService.getElapsedTime());
+    setTripStatus('stopped');
+    setCompletedRecordingStatus(recordingStatus);
+    setSaveStatus('saving');
+
+    // DIAGNOSTIC: Start the total save timer.
+    const totalSaveStart = Date.now();
+
+    console.log('[US06] Trip saving started');
+
+    try {
+      const driverId = activeTripDriverRef.current;
+      const tripId = activeTripIdRef.current;
+      const tripSession = tripService.getSession();
+
+      if (
+        !driverId ||
+        !tripId ||
+        !tripSession ||
+        tripSession.endedAt === undefined
+      ) {
+        throw new Error('Completed trip information is unavailable.');
+      }
+
+      // Preserve the original recording ID and measurements.
+      const trip: TripSaveRequest = {
+        tripId,
+        startedAt: tripSession.startedAt,
+        endedAt: tripSession.endedAt,
+        distanceKm: null,
+        timeZone:
+          Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        samples: tripService.getSamples(),
+        recordingStatus,
+      };
+
+      setPendingTrip(trip);
+
+      // DIAGNOSTIC 1: Time spent waiting for local backups.
+      let start = Date.now();
+
+      await checkpointWritesRef.current.catch(error => {
+        console.warn('Previous checkpoint failed:', error);
+      });
+
+      console.log(
+        '[US06] Backup wait:',
+        Date.now() - start,
+        'ms',
+      );
+
+      // DIAGNOSTIC 2: Time spent saving the final local copy.
+      start = Date.now();
+
+      await storePendingTrip(driverId, trip);
+
+      console.log(
+        '[US06] Local storage:',
+        Date.now() - start,
+        'ms',
+      );
+
+      // Stop if the driver account changed during saving.
+      if (signedInDriverRef.current !== driverId) {
+        throw new Error('Driver session changed during saving.');
+      }
+
+      // DIAGNOSTIC 3: Time spent uploading to Supabase.
+      start = Date.now();
+
+      console.log('[US06] Supabase upload started');
+
+      await saveRecordedTrip(trip);
+
+      console.log(
+        '[US06] Supabase upload:',
+        Date.now() - start,
+        'ms',
+      );
+
+      // Remove the local backup only after a confirmed save.
+      try {
+        await clearPendingTrip(driverId, trip.tripId);
+      } catch (error) {
+        console.warn('Unable to clear saved trip backup:', error);
+      }
+
+      if (signedInDriverRef.current === driverId) {
+        setSaveStatus('saved');
+        setPendingTrip(null);
+      }
+    } catch (error) {
+      if (signedInDriverRef.current === activeTripDriverRef.current) {
+        setSaveStatus('failed');
+      }
+
+      console.warn('[US06] Trip save failed:', error);
+    } finally {
+      // DIAGNOSTIC 4: Total duration of saving.
+      console.log(
+        '[US06] Total save time:',
+        Date.now() - totalSaveStart,
+        'ms',
+      );
+
+      finishingTripRef.current = false;
     }
   };
 
+  // Handle GPS errors and interrupted recordings.
+  const handleGpsError = (error: LocationTrackingError) => {
+    setLocationError(error.message);
+
+    // GPS permission loss automatically stops the service.
+    // Save whatever data was collected as an incomplete trip.
+    if (tripService.getStatus() === 'stopped') {
+      void finishAndSaveTrip('incomplete');
+    }
+  };
+
+  // Start a new trip.
   const handleStartTrip = async () => {
-    if (isStartingTrip || tripService.getStatus() !== 'idle') {
+    const driverId = session?.user.id;
+
+    if (
+      !driverId ||
+      restoredUserId !== driverId ||
+      isStartingTrip ||
+      tripService.getStatus() !== 'idle'
+    ) {
       return;
     }
 
@@ -258,154 +506,174 @@ function App() {
     setLocationDisabled(false);
 
     try {
-      // Check device-wide Location before starting the GPS watcher.
+      // Check device-wide Location availability.
       const availability = await checkLocationAvailability();
 
       if (availability === 'disabled') {
         Alert.alert(
           'Location Disabled',
-          'Turn on Android Location in Settings before starting a trip.',
+          'Turn on Android Location before starting a trip.',
         );
         return;
       }
 
-      // Check permissions and start the GPS watcher.
-      await tripService.startTrip(handleGpsError);
+      // Never overwrite an unsaved recording.
+      const existingTrip = await loadPendingTrip(driverId);
 
+      if (existingTrip) {
+        Alert.alert(
+          'Unsaved Trip',
+          'Please save your previous recording first.',
+        );
+
+        setPendingTrip(existingTrip);
+
+        setCompletedRecordingStatus(
+          existingTrip.recordingStatus ?? 'stopped',
+        );
+
+        setElapsedMilliseconds(
+          Math.max(
+            0,
+            existingTrip.endedAt - existingTrip.startedAt,
+          ),
+        );
+
+        setTripStatus('stopped');
+        setSaveStatus('failed');
+        return;
+      }
+
+      // Assign a stable UUID when recording starts.
+      activeTripIdRef.current = uuidv4();
+      activeTripDriverRef.current = driverId;
+
+      try {
+        await tripService.startTrip(handleGpsError);
+      } catch (error) {
+        activeTripIdRef.current = null;
+        activeTripDriverRef.current = null;
+        throw error;
+      }
+
+      if (tripService.getStatus() !== 'recording') {
+        return;
+      }
+
+      // Create an initial local backup.
+      try {
+        await saveRecordingCheckpoint(driverId);
+      } catch (error) {
+        if (tripService.getStatus() === 'recording') {
+          tripService.stopTrip();
+        }
+
+        tripService.resetTrip();
+
+        activeTripIdRef.current = null;
+        activeTripDriverRef.current = null;
+
+        throw new Error(
+          'Unable to save a recording backup on this device.',
+        );
+      }
+
+      if (tripService.getStatus() !== 'recording') {
+        return;
+      }
+
+      setCompletedRecordingStatus('stopped');
       setElapsedMilliseconds(tripService.getElapsedTime());
       setTripStatus('recording');
     } catch (error) {
-      const message =
+      console.warn('Unable to start trip:', error);
+
+      Alert.alert(
+        'Unable to Start Trip',
         error instanceof Error
           ? error.message
-          : 'Unable to start trip recording.';
-
-      Alert.alert('Unable to Start Trip', message);
+          : 'Unable to start recording.',
+      );
     } finally {
       setIsStartingTrip(false);
     }
   };
 
-  // US06: Stop recording and save the completed trip.
-  const handleStopTrip = async () => {
+  // Stop the recording and save automatically.
+  const handleStopTrip = () => {
     if (tripService.getStatus() !== 'recording') {
       return;
     }
 
-    try {
-      // Stop collecting GPS measurements and freeze the timer.
-      tripService.stopTrip();
+    tripService.stopTrip();
 
-      setElapsedMilliseconds(tripService.getElapsedTime());
-      setTripStatus('stopped');
-
-      // Retrieve the completed recording.
-      const tripSession = tripService.getSession();
-
-      if (!tripSession || tripSession.endedAt === undefined) {
-        throw new Error('Completed trip information is unavailable.');
-      }
-
-      // Generate one unique ID for the completed trip.
-      const trip: TripSaveRequest = {
-        tripId: uuidv4(),
-        startedAt: tripSession.startedAt,
-        endedAt: tripSession.endedAt,
-        distanceKm: null,
-        timeZone:
-          Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-        samples: tripService.getSamples(),
-      };
-
-      // Retain the trip data for retries while the app is open.
-      setPendingTrip(trip);
-      setSaveStatus('saving');
-
-      try {
-        const driverId = session?.user.id;
-
-        if (!driverId) {
-          throw new Error('You must be signed in to save a trip.');
-        }
-
-        // Store the completed trip locally before uploading.
-        await storePendingTrip(driverId, trip);
-
-        // Upload the trip and measurements to Supabase.
-        await saveRecordedTrip(trip);
-
-        // Remove the local copy only after successful saving.
-        try {
-          await clearPendingTrip(driverId, trip.tripId);
-        } catch (cleanupError) {
-          console.warn('Unable to clear local trip:', cleanupError);
-        }
-
-        // Confirm that Supabase saved the trip.
-        setSaveStatus('saved');
-        setPendingTrip(null);
-      } catch (error) {
-        // Keep the trip available for another attempt.
-        setSaveStatus('failed');
-
-        Alert.alert(
-          'Trip Save Failed',
-          error instanceof Error
-            ? error.message
-            : 'Unable to save the trip.',
-        );
-      }
-    } catch (error) {
-      Alert.alert(
-        'Unable to Finish Trip',
-        error instanceof Error
-          ? error.message
-          : 'An unexpected error occurred.',
-      );
-    }
+    void finishAndSaveTrip('stopped');
   };
 
-  // US06: Retry a failed save without creating a duplicate trip.
+  // Retry using the original trip UUID and recording status.
   const handleRetrySave = async () => {
-    // Retry only if a failed trip is available.
     if (saveStatus !== 'failed' || !pendingTrip) {
       return;
     }
 
-    // Update the interface while the retry is in progress.
+    const driverId = session?.user.id;
+
+    if (!driverId || restoredUserId !== driverId) {
+      return;
+    }
+
     setSaveStatus('saving');
 
+    // DIAGNOSTIC: Measure retry duration.
+    const retryStart = Date.now();
+
+    console.log('[US06] Retry started');
+
     try {
-      const driverId = session?.user.id;
+      // DIAGNOSTIC: Measure local storage.
+      let start = Date.now();
 
-      if (!driverId) {
-        throw new Error('You must be signed in to retry.');
-      }
-
-      // Preserve the original recording locally.
       await storePendingTrip(driverId, pendingTrip);
 
-      // Retry with the SAME trip ID to prevent duplicates.
+      console.log(
+        '[US06] Retry local storage:',
+        Date.now() - start,
+        'ms',
+      );
+
+      // DIAGNOSTIC: Measure Supabase upload.
+      start = Date.now();
+
       await saveRecordedTrip(pendingTrip);
 
-      // Remove the local copy after a confirmed save.
+      console.log(
+        '[US06] Retry Supabase upload:',
+        Date.now() - start,
+        'ms',
+      );
+
+      // Remove the backup after a confirmed save.
       try {
         await clearPendingTrip(driverId, pendingTrip.tripId);
-      } catch (cleanupError) {
-        console.warn('Unable to clear local trip:', cleanupError);
+      } catch (error) {
+        console.warn('Unable to clear saved trip backup:', error);
       }
 
-      setSaveStatus('saved');
-      setPendingTrip(null);
+      if (signedInDriverRef.current === driverId) {
+        setSaveStatus('saved');
+        setPendingTrip(null);
+      }
     } catch (error) {
-      // Keep the original trip available for another retry.
-      setSaveStatus('failed');
+      if (signedInDriverRef.current === driverId) {
+        setSaveStatus('failed');
+      }
 
-      Alert.alert(
-        'Trip Save Failed',
-        error instanceof Error
-          ? error.message
-          : 'Unable to save the trip. Please try again.',
+      console.warn('[US06] Trip retry failed:', error);
+    } finally {
+      console.log(
+        '[US06] Total retry time:',
+        Date.now() - retryStart,
+        'ms',
       );
     }
   };
@@ -418,7 +686,8 @@ function App() {
         style={styles.container}
         edges={['top']}
       >
-        {!ready || (session && restoredUserId !== session.user.id) ? (
+        {!ready ||
+        (session && restoredUserId !== session.user.id) ? (
           <ActivityIndicator size="large" />
         ) : session ? (
           tripStatus !== 'idle' ? (
@@ -428,6 +697,7 @@ function App() {
               onStopTrip={handleStopTrip}
               onRetrySave={handleRetrySave}
               saveStatus={saveStatus}
+              recordingStatus={completedRecordingStatus}
               errorMessage={
                 locationDisabled
                   ? LOCATION_DISABLED_MESSAGE

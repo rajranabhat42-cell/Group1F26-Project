@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type TripSaveStatus = 'idle' | 'saving' | 'saved' | 'failed';
+type SavedRecordingStatus = 'stopped' | 'incomplete';
 
 type ActiveTripScreenProps = {
   elapsedMilliseconds: number;
@@ -19,9 +20,9 @@ type ActiveTripScreenProps = {
   onRetrySave?: () => void;
   errorMessage?: string | null;
   saveStatus?: TripSaveStatus;
+  recordingStatus?: SavedRecordingStatus;
 };
 
-// Convert elapsed milliseconds into HH:MM:SS.
 function formatElapsedTime(milliseconds: number): string {
   const safeMilliseconds = Number.isFinite(milliseconds)
     ? Math.max(0, milliseconds)
@@ -44,12 +45,13 @@ function ActiveTripScreen({
   onRetrySave,
   errorMessage,
   saveStatus = 'idle',
+  recordingStatus = 'stopped',
 }: ActiveTripScreenProps) {
   const { width } = useWindowDimensions();
 
   const isRecording = status === 'recording';
+  const isIncomplete = recordingStatus === 'incomplete';
 
-  // Identify the device-wide Location warning.
   const isLocationOff = Boolean(
     errorMessage?.startsWith('Android Location is turned off.'),
   );
@@ -57,19 +59,15 @@ function ActiveTripScreen({
   const hasGpsWarning =
     isRecording && Boolean(errorMessage);
 
-  // Do not display an active Location-off warning
-  // after the trip has already stopped.
   const showWarning =
     Boolean(errorMessage) &&
     (isRecording || !isLocationOff);
 
-  // Keep the timer readable on different screen widths.
   const timerFontSize = Math.min(
     68,
     Math.max(40, Math.floor((width - 96) / 4.55)),
   );
 
-  // Communicate the recording and saving statuses.
   const statusText = isRecording
     ? hasGpsWarning
       ? 'GPS INTERRUPTED'
@@ -77,19 +75,24 @@ function ActiveTripScreen({
     : saveStatus === 'saving'
       ? 'SAVING'
       : saveStatus === 'saved'
-        ? 'SAVED'
+        ? isIncomplete
+          ? 'INCOMPLETE'
+          : 'SAVED'
         : saveStatus === 'failed'
           ? 'SAVE FAILED'
           : 'STOPPED';
 
-  // Display the appropriate message after recording ends.
   const saveMessage =
     saveStatus === 'saving'
       ? 'Saving your trip...'
       : saveStatus === 'saved'
-        ? 'Trip saved. Analysis pending. No score is available until analysis completes.'
+        ? isIncomplete
+          ? 'Trip saved as incomplete. No score is available.'
+          : 'Trip saved. Analysis pending. No score is available until analysis completes.'
         : saveStatus === 'failed'
-          ? 'Trip save failed. Your recording has been saved locally and can be retried.'
+          ? isIncomplete
+            ? 'Trip interrupted. Tap Retry Save.'
+            : "Couldn't save your trip. Please try again."
           : 'Trip data has not been saved yet.';
 
   return (
@@ -102,7 +105,6 @@ function ActiveTripScreen({
         style={styles.scrollView}
         contentContainerStyle={styles.content}
       >
-        {/* Page header */}
         <View style={styles.header}>
           <Text style={styles.eyebrow}>
             {isRecording ? 'ACTIVE TRIP' : 'TRIP ENDED'}
@@ -114,17 +116,16 @@ function ActiveTripScreen({
               : saveStatus === 'saving'
                 ? 'Saving trip'
                 : saveStatus === 'saved'
-                  ? 'Trip saved'
+                  ? isIncomplete
+                    ? 'Trip incomplete'
+                    : 'Trip saved'
                   : saveStatus === 'failed'
                     ? 'Save failed'
                     : 'Trip stopped'}
           </Text>
         </View>
 
-        {/* Main recording card */}
         <View style={styles.recordingCard}>
-
-          {/* Recording and save status indicator */}
           <View style={styles.statusRow}>
             <View
               style={[
@@ -134,7 +135,9 @@ function ActiveTripScreen({
                     ? styles.warningDot
                     : styles.recordingDot
                   : saveStatus === 'saved'
-                    ? styles.recordingDot
+                    ? isIncomplete
+                      ? styles.warningDot
+                      : styles.recordingDot
                     : saveStatus === 'failed'
                       ? styles.errorDot
                       : saveStatus === 'saving'
@@ -151,7 +154,9 @@ function ActiveTripScreen({
                     ? styles.warningText
                     : styles.recordingText
                   : saveStatus === 'saved'
-                    ? styles.recordingText
+                    ? isIncomplete
+                      ? styles.warningText
+                      : styles.recordingText
                     : saveStatus === 'failed'
                       ? styles.errorText
                       : saveStatus === 'saving'
@@ -166,7 +171,6 @@ function ActiveTripScreen({
             </Text>
           </View>
 
-          {/* Elapsed recording timer */}
           <Text style={styles.timerLabel}>
             ELAPSED TIME
           </Text>
@@ -183,7 +187,6 @@ function ActiveTripScreen({
             {formatElapsedTime(elapsedMilliseconds)}
           </Text>
 
-          {/* US06: Display the current saving state. */}
           {!isRecording ? (
             <Text
               style={styles.saveNotice}
@@ -194,7 +197,6 @@ function ActiveTripScreen({
             </Text>
           ) : null}
 
-          {/* US06: Retry a failed save using the same trip. */}
           {!isRecording &&
           saveStatus === 'failed' &&
           onRetrySave ? (
@@ -211,7 +213,6 @@ function ActiveTripScreen({
             </Pressable>
           ) : null}
 
-          {/* Stop Trip is available only during recording. */}
           {isRecording ? (
             <Pressable
               style={styles.stopButton}
@@ -226,7 +227,6 @@ function ActiveTripScreen({
             </Pressable>
           ) : null}
 
-          {/* Driver safety reminder */}
           {isRecording ? (
             <Text style={styles.safetyText}>
               Only stop when safely parked.
@@ -234,7 +234,6 @@ function ActiveTripScreen({
           ) : null}
         </View>
 
-        {/* GPS interruption warning */}  
         {showWarning ? (
           <View
             style={styles.warningCard}
@@ -264,22 +263,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F7FA',
   },
-
   scrollView: {
     flex: 1,
   },
-
   content: {
     flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 28,
     paddingBottom: 24,
   },
-
   header: {
     marginBottom: 22,
   },
-
   eyebrow: {
     fontSize: 14,
     fontWeight: '700',
@@ -287,13 +282,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 8,
   },
-
   pageTitle: {
     fontSize: 34,
     fontWeight: '700',
     color: '#14233D',
   },
-
   recordingCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -301,7 +294,6 @@ const styles = StyleSheet.create({
     paddingVertical: 26,
     alignItems: 'center',
   },
-
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -309,53 +301,42 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 24,
   },
-
   statusDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
     marginRight: 10,
   },
-
   recordingDot: {
     backgroundColor: '#15976A',
   },
-
   warningDot: {
     backgroundColor: '#D97706',
   },
-
   stoppedDot: {
     backgroundColor: '#64748B',
   },
-
   errorDot: {
     backgroundColor: '#DC2626',
   },
-
   statusText: {
     fontSize: 19,
     fontWeight: '700',
     letterSpacing: 0.4,
     flexShrink: 1,
   },
-
   recordingText: {
     color: '#15976A',
   },
-
   warningText: {
     color: '#B45309',
   },
-
   stoppedText: {
     color: '#64748B',
   },
-
   errorText: {
     color: '#DC2626',
   },
-
   timerLabel: {
     fontSize: 15,
     fontWeight: '600',
@@ -363,7 +344,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     letterSpacing: 1,
   },
-
   timer: {
     color: '#14233D',
     fontWeight: '700',
@@ -371,7 +351,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 30,
   },
-
   saveNotice: {
     fontSize: 16,
     lineHeight: 23,
@@ -379,7 +358,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-
   stopButton: {
     width: '100%',
     minHeight: 72,
@@ -390,19 +368,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 14,
   },
-
-  disabledButton: {
-    opacity: 0.45,
-  },
-
   stopButtonText: {
     color: '#14233D',
     fontSize: 24,
     fontWeight: '700',
     textAlign: 'center',
   },
-
-  // US06: Retry button shown after a failed save.
   retryButton: {
     width: '100%',
     minHeight: 56,
@@ -414,13 +385,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginBottom: 20,
   },
-
   retryButtonText: {
     color: '#14233D',
     fontSize: 18,
     fontWeight: '700',
   },
-
   safetyText: {
     fontSize: 15,
     fontWeight: '600',
@@ -428,21 +397,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 18,
   },
-
   warningCard: {
     backgroundColor: '#FFF2E8',
     borderRadius: 18,
     padding: 18,
     marginTop: 16,
   },
-
   warningTitle: {
     color: '#14233D',
     fontSize: 19,
     fontWeight: '700',
     marginBottom: 6,
   },
-
   warningDescription: {
     color: '#14233D',
     fontSize: 16,
