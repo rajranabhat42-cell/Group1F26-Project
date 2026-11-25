@@ -14,6 +14,8 @@ export interface DetectedDrivingEvent {
   measuredValue: number;
   unit: string;
   threshold: number;
+   sequenceNo: number;
+  speedLimitKmh: number | null;
 }
 
 export class EventDetectionService {
@@ -30,24 +32,25 @@ export class EventDetectionService {
         sample.speedMetersPerSecond !== null &&
         Number.isFinite(sample.speedMetersPerSecond) &&
         sample.speedMetersPerSecond >= 0
-      ) {
+      )
+    {
         const speedKmh = sample.speedMetersPerSecond * 3.6;
 
         // Speeding requires a valid speed limit
-        const roadSpeedLimitKmh = (
-          sample as DrivingSample & {
-            roadSpeedLimitKmh?: number | null;
-          }
-        ).roadSpeedLimitKmh;
-
+        const roadSpeedLimitKmh =  sample.roadSpeedLimitKmh;
+        const speedLimitSource = sample.speedLimitSource;
+        // Checks for valid speed-limit data and speeding above 10 km/h.
         if (
           roadSpeedLimitKmh !== null &&
-          roadSpeedLimitKmh !== undefined &&
           Number.isFinite(roadSpeedLimitKmh) &&
           roadSpeedLimitKmh > 0 &&
+          typeof speedLimitSource === 'string' &&
+          speedLimitSource.trim().length > 0 &&
           sample.speedMetersPerSecond >
           (roadSpeedLimitKmh + this.SPEEDING_THRESHOLD_KMH) / 3.6
-        ) {
+        )
+        // Records the detected speeding event.
+         {
           events.push({
             eventType: 'speeding',
             timestamp: sample.timestamp,
@@ -56,7 +59,8 @@ export class EventDetectionService {
             measuredValue: speedKmh,
             unit: 'km/h',
             threshold: roadSpeedLimitKmh + this.SPEEDING_THRESHOLD_KMH,
-          });
+              sequenceNo: sample.sequenceNo,
+            speedLimitKmh: roadSpeedLimitKmh,        });
         }
       }
 
@@ -75,6 +79,8 @@ export class EventDetectionService {
           measuredValue: sample.accelerationMetersPerSecondSquared,
           unit: 'm/s²',
           threshold: this.HARSH_BRAKING_THRESHOLD,
+          sequenceNo: sample.sequenceNo,
+          speedLimitKmh: null,
         });
       }
 
@@ -93,6 +99,8 @@ export class EventDetectionService {
           measuredValue: sample.accelerationMetersPerSecondSquared,
           unit: 'm/s²',
           threshold: this.RAPID_ACCELERATION_THRESHOLD,
+          sequenceNo: sample.sequenceNo,
+          speedLimitKmh: null,
         });
       }
     }
